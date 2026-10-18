@@ -169,6 +169,8 @@ a:hover { color: var(--navy); }
 table.heat { border-collapse: separate; border-spacing: 4px; font-size: 13px; }
 table.heat th { font-weight: 500; color: var(--ink-2); text-align: left; padding: 4px 6px; vertical-align: bottom; }
 table.heat thead th { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; height: 120px; font-size: 12px; text-align: left; }
+/* Chinese headers read top to bottom with upright characters; only Latin domain names are turned. */
+table.heat.cjk-head thead th { transform: none; text-align: right; letter-spacing: 0.08em; }
 table.heat tbody th { white-space: nowrap; color: var(--ink); font-weight: 500; }
 table.heat tbody th small { display: block; color: var(--ink-2); font-weight: 400; }
 .cell { width: 56px; height: 44px; border: 0; border-radius: var(--radius-s); background: #eaf0f7; font: inherit; font-weight: 700; color: var(--ink); cursor: default; }

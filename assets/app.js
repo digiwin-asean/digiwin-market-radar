@@ -220,7 +220,7 @@
       return `<td>${n ? `<span class="cell ${level(n, max)}" style="display:inline-grid;place-items:center">${n}</span>` : '<span class="cell" aria-hidden="true"></span>'}</td>`;
     }).join('')}</tr>`).join('');
     return `<p class="section-note">重點產業與部門的交叉：數字為同時標示該產業與部門的文章數。</p>
-      <div class="scroll"><table class="heat"><thead><tr><th></th>${used.map((c) => `<th scope="col">${esc(c)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;
+      <div class="scroll"><table class="heat cjk-head"><thead><tr><th></th>${used.map((c) => `<th scope="col">${esc(c)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;
   }
 
   function tabIdeas(data) {
