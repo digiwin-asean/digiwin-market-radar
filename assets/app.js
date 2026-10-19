@@ -152,7 +152,7 @@
     const kpi = (n, zh, en, cls = '') => `<div class="kpi ${cls}"><b>${n}</b><span>${zh}</span> <span class="en">${en}</span></div>`;
     const seen = new Set();
     const ongoing = [...data.rising, ...data.recurring].filter((p) => !seen.has(p.code) && seen.add(p.code));
-    return `<div class="kpis">${kpi(data.stats.items, '相關文章', 'articles')}${kpi(data.stats.newPains, '新痛點', 'new pains', 'new')}${kpi(data.stats.repeatPains, '重複出現', 'recurring')}${kpi(data.stats.rising, '持續升溫', 'rising')}</div>
+    return `${howto('今天由 AI 判定與製造業相關的文章，以及從中歸納的痛點。左邊是第一次出現的痛點，右邊是過去出現過、今天再次被提到或正在升溫的痛點。')}<div class="kpis">${kpi(data.stats.items, '相關文章', 'articles')}${kpi(data.stats.newPains, '新痛點', 'new pains', 'new')}${kpi(data.stats.repeatPains, '重複出現', 'recurring')}${kpi(data.stats.rising, '持續升溫', 'rising')}</div>
       <p class="lede">${esc(data.summary_zh)}</p><p class="en">${esc(data.summary_en)}</p>
       <div class="cols">
         <div class="col"><h2>今日第一次出現 <span class="en">First seen today</span></h2>
@@ -171,83 +171,133 @@
     return `l${Math.min(5, Math.max(1, Math.ceil((n / Math.max(max, 5)) * 5)))}`;
   }
 
-  function tabHeat(data, items) {
-    const { rows, cols, cells, ranking } = data.heatmap;
-    if (!cols.length) return '<p class="empty-note">今天沒有可繪製的資料。</p>';
-    const max = Math.max(...Object.values(cells).map((c) => c.items), 1);
-    const head = cols.map((c) => `<th scope="col">${esc(c.label)}</th>`).join('');
-    const body = rows.map((row) => `<tr><th scope="row">${esc(row)}<small>${esc(DEPT_EN[row] || '')}</small></th>${cols.map((col) => {
-      const cell = cells[`${row}|${col.key}`];
-      return cell
-        ? `<td><button class="cell ${level(cell.items, max)}" data-n="${cell.items}" data-key="${esc(`${row}|${col.key}`)}" aria-pressed="false" aria-label="${esc(row)}、${esc(col.label)}：${cell.items} 篇">${cell.items}</button></td>`
-        : '<td><span class="cell" aria-hidden="true"></span></td>';
-    }).join('')}</tr>`).join('');
-    const top = ranking[0] ? ranking[0].items : 1;
-    const bars = ranking.map((r) => `<div class="bar"><span>${esc(r.department)}</span><div class="track"><div class="fill" style="width:${Math.round((r.items / top) * 100)}%"></div></div><b>${r.items}</b></div>`).join('');
-    return `<div class="heat-layout">
-      <div>
-        <div class="scroll"><table class="heat"><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody></table>
-          <div class="legend">少 <i style="background:var(--heat-1)"></i><i style="background:var(--heat-2)"></i><i style="background:var(--heat-3)"></i><i style="background:var(--heat-4)"></i><i style="background:var(--heat-5)"></i> 多　數字為文章數，一篇文章可屬兩個部門。</div></div>
-        <h2 class="section-title" style="margin-top:26px">各部門文章數 <span class="en">Articles by department</span></h2>
-        <div class="bars">${bars}</div>
-      </div>
-      <aside class="side" id="side" aria-live="polite"><h3>點一格查看文章</h3><p class="sub">選一個部門與來源的交叉格，這裡會列出相關文章與痛點。</p></aside>
-    </div>`;
-  }
+  const howto = (text) => `<p class="howto"><b>怎麼看</b>${text}</p>`;
 
-  function bindHeat(data, items) {
+  // Shared side panel for clickable grids: lookup(key) returns { title, sub, ids }.
+  function bindCells(items, lookup) {
     const side = $('#side');
     document.querySelectorAll('.cell[data-key]').forEach((button) => {
       button.addEventListener('click', () => {
         document.querySelectorAll('.cell[aria-pressed="true"]').forEach((b) => b.setAttribute('aria-pressed', 'false'));
         button.setAttribute('aria-pressed', 'true');
-        const key = button.dataset.key;
-        const [row, col] = key.split('|');
-        const list = (data.heatmap.cells[key]?.ids || []).map((id) => items.get(id)).filter(Boolean);
-        side.innerHTML = `<h3>${esc(row)}</h3><p class="sub">${esc(col)}，${list.length} 篇</p><ul class="list">${list.map(itemRow).join('')}</ul>`;
+        const { title, sub, ids } = lookup(button.dataset.key);
+        const list = ids.map((id) => items.get(id)).filter(Boolean);
+        side.innerHTML = `<h3>${esc(title)}</h3><p class="sub">${esc(sub)}，${list.length} 篇</p><ul class="list">${list.map(itemRow).join('')}</ul>`;
       });
     });
   }
 
-  function tabIndustry(data) {
-    const { rows, cols, cells } = data.industryMap;
-    const values = Object.values(cells);
-    if (!values.length) return '<p class="empty-note">今天的文章沒有標示產業。</p>';
-    const max = Math.max(...values, 1);
-    const used = cols.filter((col) => rows.some((row) => cells[`${row}|${col}`]));
-    const body = rows.map((row) => `<tr><th scope="row">${esc(row)}</th>${used.map((col) => {
-      const n = cells[`${row}|${col}`] || 0;
-      return `<td>${n ? `<span class="cell ${level(n, max)}" style="display:inline-grid;place-items:center">${n}</span>` : '<span class="cell" aria-hidden="true"></span>'}</td>`;
+  const cellButton = (key, n, max, label) => `<button class="cell ${level(n, max)}" data-n="${n}" data-key="${esc(key)}" aria-pressed="false" aria-label="${esc(label)}：${n} 篇">${n}</button>`;
+  const sidePanel = (hint) => `<aside class="side" id="side" aria-live="polite"><h3>點一格查看文章</h3><p class="sub">${hint}</p></aside>`;
+
+  function tabHeat(data) {
+    const { rows, cols, cells, ranking } = data.heatmap;
+    const intro = howto('每一列是一個部門，每一欄是一家新聞來源。格子裡的數字是當天與該部門有關、來自該來源的文章數；一篇文章最多屬兩個部門，所以加總可能多於文章數。點格子查看文章。');
+    if (!cols.length) return `${intro}<p class="empty-note">今天沒有可繪製的資料。</p>`;
+    const max = Math.max(...Object.values(cells).map((c) => c.items), 1);
+    const head = cols.map((c) => `<th scope="col">${esc(c.label)}</th>`).join('');
+    const body = rows.map((row) => `<tr><th scope="row">${esc(row)}<small>${esc(DEPT_EN[row] || '')}</small></th>${cols.map((col) => {
+      const cell = cells[`${row}|${col.key}`];
+      return cell ? `<td>${cellButton(`${row}|${col.key}`, cell.items, max, `${row}、${col.label}`)}</td>` : '<td><span class="cell" aria-hidden="true"></span></td>';
     }).join('')}</tr>`).join('');
-    return `<p class="section-note">重點產業與部門的交叉：數字為同時標示該產業與部門的文章數。</p>
-      <div class="scroll"><table class="heat cjk-head"><thead><tr><th></th>${used.map((c) => `<th scope="col">${esc(c)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;
+    const top = ranking[0] ? ranking[0].items : 1;
+    const bars = ranking.map((r) => `<div class="bar"><span>${esc(r.department)}</span><div class="track"><div class="fill" style="width:${Math.round((r.items / top) * 100)}%"></div></div><b>${r.items}</b></div>`).join('');
+    return `${intro}<div class="heat-layout">
+      <div>
+        <div class="scroll"><table class="heat"><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody></table>
+          <div class="legend">少 <i style="background:var(--heat-1)"></i><i style="background:var(--heat-2)"></i><i style="background:var(--heat-3)"></i><i style="background:var(--heat-4)"></i><i style="background:var(--heat-5)"></i> 多</div></div>
+        <h2 class="section-title" style="margin-top:26px">各部門文章數 <span class="en">Articles by department</span></h2>
+        <div class="bars">${bars}</div>
+      </div>
+      ${sidePanel('選一個部門與來源的交叉格，這裡會列出文章。')}
+    </div>`;
   }
 
-  function tabIdeas(data) {
-    if (!data.opportunities.length) return '<p class="empty-note">今天沒有可轉成內容的痛點。</p>';
+  function bindHeat(data, items) {
+    bindCells(items, (key) => {
+      const [row, col] = key.split('|');
+      return { title: row, sub: col, ids: data.heatmap.cells[key]?.ids || [] };
+    });
+  }
+
+  // Built from the articles themselves, so every number can be opened.
+  function industryCells(data) {
+    const cells = {};
+    for (const item of data.items) {
+      for (const industry of item.industries || []) {
+        for (const department of item.departments || []) {
+          const key = `${industry}|${department}`;
+          (cells[key] = cells[key] || []).push(item.id);
+        }
+      }
+    }
+    return cells;
+  }
+
+  function tabIndustry(data) {
+    const { rows, cols } = data.industryMap;
+    const cells = industryCells(data);
+    const intro = howto('每一列是一個重點產業，每一欄是一個部門。數字是同時標示該產業與該部門的文章數；沒有寫明產業的文章不會出現在這裡。點格子查看文章。');
+    const values = Object.values(cells).map((ids) => ids.length);
+    if (!values.length) return `${intro}<p class="empty-note">今天的文章沒有標示產業。</p>`;
+    const max = Math.max(...values, 1);
+    const usedRows = rows.filter((row) => cols.some((col) => cells[`${row}|${col}`]));
+    const usedCols = cols.filter((col) => rows.some((row) => cells[`${row}|${col}`]));
+    const body = usedRows.map((row) => `<tr><th scope="row">${esc(row)}</th>${usedCols.map((col) => {
+      const ids = cells[`${row}|${col}`];
+      return ids ? `<td>${cellButton(`${row}|${col}`, ids.length, max, `${row}、${col}`)}</td>` : '<td><span class="cell" aria-hidden="true"></span></td>';
+    }).join('')}</tr>`).join('');
+    return `${intro}<div class="heat-layout">
+      <div class="scroll"><table class="heat cjk-head"><thead><tr><th></th>${usedCols.map((c) => `<th scope="col">${esc(c)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>
+      ${sidePanel('選一個產業與部門的交叉格，這裡會列出文章。')}
+    </div>`;
+  }
+
+  function bindIndustry(data, items) {
+    const cells = industryCells(data);
+    bindCells(items, (key) => {
+      const [industry, department] = key.split('|');
+      return { title: industry, sub: department, ids: cells[key] || [] };
+    });
+  }
+
+  function tabIdeas(data, items) {
+    const intro = howto('每一列是一個痛點：狀態表示今天第一次出現、持續升溫或重複出現，次數是累計提及次數。「內容切角」是 AI 建議的寫作方向，下方附原文可直接閱讀。');
+    if (!data.opportunities.length) return `${intro}<p class="empty-note">今天沒有可轉成內容的痛點。</p>`;
     const kind = { new: ['今日新出現', 'kind-new'], rising: ['持續升溫', 'kind-rising'], recurring: ['重複出現', ''] };
-    const rows = data.opportunities.map((o) => `<tr>
+    const related = (code) => data.items.filter((item) => item.painCode === code).slice(0, 3)
+      .map((item) => `<li><a href="${safeUrl(item.url)}" target="_blank" rel="noopener">${esc(item.summary_zh || item.title)}</a> <span class="en">${esc(item.source)}</span></li>`).join('');
+    const rows = data.opportunities.map((o) => {
+      const refs = related(o.pain_code);
+      return `<tr>
       <td><b>${esc(o.pain_code)}</b></td>
-      <td>${esc(o.pain_zh)}<div class="en">${esc(o.pain_en)}</div></td>
+      <td>${esc(o.pain_zh)}<div class="en">${esc(o.pain_en)}</div>${refs ? `<ul class="refs">${refs}</ul>` : ''}</td>
       <td>${o.departments.map((d) => `<span class="badge">${esc(d)}</span>`).join(' ')}</td>
       <td class="nowrap"><span class="${kind[o.kind][1]}">${kind[o.kind][0]}</span></td>
       <td class="num">${o.count}</td>
       <td>${o.angle_zh ? `${esc(o.angle_zh)}<div class="en">${esc(o.why_en)}</div>` : '<span class="en">尚無建議</span>'}</td>
-      <td class="nowrap">${esc(FORMAT_ZH[o.format] || '')}</td></tr>`).join('');
-    return `<p class="section-note">把今天的痛點轉成內容題目。AI 建議的切角排在前面，其餘痛點可由行銷團隊補上。</p>
-      <div class="scroll"><table class="data"><thead><tr><th>代碼</th><th>痛點</th><th>部門</th><th class="nowrap">狀態</th><th class="nowrap">次數</th><th class="wide">內容切角</th><th class="nowrap">形式</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      <td class="nowrap">${esc(FORMAT_ZH[o.format] || '')}</td></tr>`;
+    }).join('');
+    return `${intro}<div class="scroll"><table class="data"><thead><tr><th>代碼</th><th class="wide">痛點與原文</th><th>部門</th><th class="nowrap">狀態</th><th class="nowrap">次數</th><th class="wide">內容切角</th><th class="nowrap">形式</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
   function tabInvest(data) {
-    const inv = data.investment || { total: 0, byProvince: [], byType: {} };
-    if (!inv.total) return '<p class="empty-note">目前沒有已收集的投資、消防或環評訊號。</p>';
+    const inv = data.investment || { total: 0, byProvince: [], byType: {}, byStatus: {} };
+    const intro = howto(`${esc(inv.scope || '')}自開始收集以來，新聞中出現的公司層級訊號（新投資、增資、建廠、消防、環評、招聘 ERP/MES 等），按省市統計。上方是各類型件數；表格每一格連結到內部 Lark Base 的該筆紀錄，需登入且有權限才能看到公司名稱與來源。行銷團隊在 Base 把訊號標為「無效」後，隔天起不再計入。`);
+    if (!inv.total) return `${intro}<p class="empty-note">目前沒有已收集的投資、消防或環評訊號。</p>`;
     const types = Object.entries(inv.byType).sort((a, b) => b[1] - a[1]);
+    const status = Object.entries(inv.byStatus || {}).map(([s, n]) => `${esc(s)} ${n}`).join('、');
     const top = inv.byProvince[0] ? inv.byProvince[0].total : 1;
-    const rows = inv.byProvince.map((p) => `<tr><td class="nowrap">${esc(p.province)}</td><td class="num">${p.total}</td><td><div class="track" style="height:10px;background:var(--paper);border-radius:5px;min-width:80px"><div class="fill" style="height:10px;border-radius:5px;background:var(--mfg);width:${Math.round((p.total / top) * 100)}%"></div></div></td><td>${Object.entries(p.byType).map(([t, n]) => `<span class="badge">${esc(t)} ${n}</span>`).join(' ')}</td></tr>`).join('');
-    return `<p class="section-note">${esc(inv.scope)}的公司層級訊號統計（累計），依省市分布。</p>
+    const chip = (s) => {
+      const label = `${esc(s.type)}<span class="status">${esc(s.status)}</span>`;
+      return s.url ? `<a class="badge sig" href="${safeUrl(s.url)}" target="_blank" rel="noopener" title="在 Lark Base 開啟（需權限）">${label}</a>` : `<span class="badge sig">${label}</span>`;
+    };
+    const rows = inv.byProvince.map((p) => `<tr><td class="nowrap">${esc(p.province)}</td><td class="num">${p.total}</td><td><div class="track" style="height:10px;background:var(--paper);border-radius:5px;min-width:80px"><div class="fill" style="height:10px;border-radius:5px;background:var(--mfg);width:${Math.round((p.total / top) * 100)}%"></div></div></td><td>${p.signals ? p.signals.map(chip).join(' ') : Object.entries(p.byType).map(([type, n]) => `<span class="badge">${esc(type)} ${n}</span>`).join(' ')}</td></tr>`).join('');
+    return `${intro}
       <div class="kpis">${types.slice(0, 4).map(([t, n]) => `<div class="kpi"><b>${n}</b><span>${esc(t)}</span></div>`).join('')}</div>
-      <div class="scroll"><table class="data"><thead><tr><th class="nowrap">省市</th><th class="nowrap">件數</th><th></th><th>訊號類型</th></tr></thead><tbody>${rows}</tbody></table></div>
-      <p class="note">只顯示數量。公司名稱、稅號與來源連結僅保存在內部系統，由行銷團隊審核後再交給業務。越南省市已依 2025 年 7 月合併後的 34 個省市歸類。</p>`;
+      ${status ? `<p class="section-note">審核狀態：${status}</p>` : ''}
+      <div class="scroll"><table class="data"><thead><tr><th class="nowrap">省市</th><th class="nowrap">件數</th><th></th><th>訊號（點擊在 Lark Base 查看）</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="note">越南省市已依 2025 年 7 月合併後的 34 個省市歸類；「未標示」表示新聞沒有寫明地點。</p>`;
   }
 
   async function renderDay() {
@@ -295,6 +345,7 @@
       const render = { new: tabNew, heat: tabHeat, industry: tabIndustry, ideas: tabIdeas, invest: tabInvest }[tab];
       $('#panel').innerHTML = render(data, items);
       if (tab === 'heat') bindHeat(data, items);
+      if (tab === 'industry') bindIndustry(data, items);
       document.querySelectorAll('.switch a, .datenav a').forEach((a) => { a.href = a.href.replace(/#.*$/, '') + `#${tab}`; });
     };
     document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => { history.replaceState(null, '', `#${b.dataset.tab}`); show(b.dataset.tab); }));

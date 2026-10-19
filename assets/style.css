@@ -215,3 +215,10 @@ footer p { margin: 0 0 6px; max-width: 70em; }
 @media (prefers-reduced-motion: reduce) { .radar-sweep { animation: none; } }
 
 .loading { padding: 48px 0; color: var(--ink-2); }
+
+.howto { background: #e9f2fb; border-radius: var(--radius-s); padding: 10px 14px; margin: 0 0 18px; font-size: 14px; max-width: 70em; }
+.howto b { margin-right: 8px; color: var(--navy); }
+.badge.sig { text-decoration: none; margin: 2px 0; }
+a.badge.sig:hover { background: #d4e6f8; }
+.badge.sig .status { margin-left: 6px; color: var(--ink-2); }
+table.data .refs { margin: 6px 0 0; padding: 0; list-style: none; font-size: 13px; display: grid; gap: 3px; }
